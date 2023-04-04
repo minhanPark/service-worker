@@ -1,8 +1,9 @@
 const version = "v0.05";
 const staticCacheName = version + "staticFiles";
 const imageCacheName = "images";
+const pagesCacheName = "pages";
 
-const cacheList = [staticCacheName, imageCacheName];
+const cacheList = [staticCacheName, imageCacheName, pagesCacheName];
 
 addEventListener("install", (installEvent) => {
   installEvent.waitUntil(
@@ -12,10 +13,10 @@ addEventListener("install", (installEvent) => {
       ]);
       return staticCache.addAll([
         // 캐시 필수 파일
-        "/path/to/stylesheet.css",
-        "/path/to/javscript.js",
+        // "/path/to/stylesheet.css",
+        // "/path/to/javscript.js",
         "/offline.html",
-        "/fallback.svg",
+        // "/fallback.svg",
       ]);
     })
   );
@@ -46,7 +47,24 @@ addEventListener("fetch", (fetchEvent) => {
   const request = fetchEvent.request;
   if (request.headers.get("Accept").includes("text/html")) {
     fetchEvent.respondWith(
-      fetch(request).catch(() => caches.match("/offline.html"))
+      fetch(request)
+        .then((responseFromFetch) => {
+          const copy = responseFromFetch.clone();
+          fetchEvent.waitUntil(
+            caches.open(pagesCacheName).then((pagesCache) => {
+              return pagesCache.put(request, copy);
+            })
+          );
+          return responseFromFetch;
+        })
+        .catch((error) =>
+          caches.match("request").then((responseFromCache) => {
+            if (responseFromCache) {
+              return responseFromCache;
+            }
+            return caches.match("/offline.html");
+          })
+        )
     );
     return;
   }
@@ -54,13 +72,7 @@ addEventListener("fetch", (fetchEvent) => {
     fetchEvent.respondWith(
       caches.match(request).then((responseFromCache) => {
         if (responseFromCache) {
-          fetchEvent.waitUntil(
-            fetch(request).then((responseFromFetch) => {
-              caches.open(imageCacheName).then((imageCache) => {
-                return imageCache.put(request, responseFromFetch);
-              });
-            })
-          );
+          fetchEvent.waitUntil(stashInCache(request, imageCacheName));
           return responseFromCache;
         }
         return fetch(request)
@@ -87,3 +99,26 @@ addEventListener("fetch", (fetchEvent) => {
     })
   );
 });
+
+function trimCache(cacheName, maxItems) {
+  caches.open(cacheName).then((cache) => {
+    cache.keys().then((keys) => {
+      if (keys.length > maxItems) {
+        cache.delete(keys[0]).then(trimCache(cacheName, maxItems));
+      }
+    });
+  });
+}
+
+addEventListener("message", (messageEvent) => {
+  if (messageEvent.data === "캐시 정리하기") {
+    trimCache(pagesCacheName, 20);
+    trimCache(imageCacheName, 50);
+  }
+});
+
+async function stashInCache(request, cacheName) {
+  const responseFromFetch = await fetch(request);
+  const theCache = await caches.open(cacheName);
+  return await theCache.put(request, responseFromFetch);
+}

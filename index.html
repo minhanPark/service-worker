@@ -10,15 +10,13 @@
   <body>
     <script>
       if (navigator.serviceWorker) {
-        navigator.serviceWorker
-          .register("/serviceworker.js")
-          .then(function (registration) {
-            console.log("성공!", registration.scope);
-          })
-          .catch(function (error) {
-            console.log("실패!", error);
+        navigator.serviceWorker.register("/serviceworker.js");
+        if (navigator.serviceWorker.controller) {
+          //서비스 워커가 실행중이다.
+          window.addEventListener("load", function () {
+            navigator.serviceWorker.controller.postMessage("캐시 정리하기");
           });
-        console.log("등록요청 완료");
+        }
       }
     </script>
   </body>
